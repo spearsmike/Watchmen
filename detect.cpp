@@ -65,7 +65,7 @@ int main(int argc, char* argv[])
     struct
     {
         cv::Size dimensions;
-        union {char* path; int device_id=0;} handle;
+        union {char* path; int device_id=0;} v_cap_source;
         double fps;
         int format;
         int codec;
@@ -79,11 +79,11 @@ int main(int argc, char* argv[])
     }
     else
     {
-        capture_info.handle.path = argv[1];
+        capture_info.v_cap_source.path = argv[1];
     }
 #else
     if(argc >= 2)
-        capture_info.handle.device_id = atoi(argv[1]);
+        capture_info.v_cap_source.device_id = atoi(argv[1]);
 #endif
     // the min diff amount counted as motion, faster motion creates a larger absolute diff
     // it should be big enough to catch motion but small enough to filter out noise
@@ -105,9 +105,9 @@ int main(int argc, char* argv[])
     int k_size = 2;
 
 #ifdef TEST
-    cv::VideoCapture cap(capture_info.handle.path);
+    cv::VideoCapture cap(capture_info.v_cap_source.path);
 #else
-    cv::VideoCapture cap(capture_info.handle.device_id);
+    cv::VideoCapture cap(capture_info.v_cap_source.device_id);
 #endif
     capture_info.dimensions = cv::Size(cap.get(cv::CAP_PROP_FRAME_WIDTH), cap.get(cv::CAP_PROP_FRAME_HEIGHT));
     capture_info.format = cap.get(cv::CAP_PROP_FORMAT);
@@ -146,7 +146,7 @@ int main(int argc, char* argv[])
         {
             std::cout << "End of video\n";
             break;
-            cap.open(capture_info.handle.path);
+            cap.open(capture_info.v_cap_source.path);
             cap >> curr_frame_color;
         }
 #endif
