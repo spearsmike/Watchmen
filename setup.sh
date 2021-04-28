@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-apt update
-apt install make
-apt install libopencv-dev
-apt install g++
+apt -y install make
+apt -y install libopencv-dev
+apt -y install g++
+ln -s /usr/include/opencv4/opencv2 /usr/include/opencv2
