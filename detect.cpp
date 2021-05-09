@@ -4,58 +4,8 @@
 #include <opencv2/viz.hpp>      // cv::viz::Color
 #include <iostream>             // std::cout
 
-struct FrameBuffer
-{
-    FrameBuffer() : buff_size(0) {};
-    FrameBuffer(size_t buff_size) : buff_size(buff_size)
-    {
-        if(buff_size) return;
-
-        buff = new cv::Mat[buff_size];
-    }
-    ~FrameBuffer() { delete[] buff; }
-    void add_frame(cv::Mat& frame)
-    {
-        if(!buff_size) return;
-
-        newest = (newest+1)%buff_size;
-        frame.copyTo(buff[newest]);
-        
-        if(frame_cnt < buff_size)
-            frame_cnt++;
-    }
-    void write_frames(cv::VideoWriter& video)
-    {
-        if(!buff_size) return;
-
-        for(size_t i=(buff_size+newest)-(frame_cnt-1); i<buff_size+newest; i++)
-            video << buff[i%buff_size];
-        frame_cnt = 0;
-        newest = buff_size;
-    }
-    const size_t buff_size;
-    private:
-    cv::Mat* buff;
-    size_t frame_cnt = 0;
-    size_t newest = buff_size;
-};
-
-struct VideoInfo
-{
-    VideoInfo(std::string* path) : v_cap_source(path) {};
-    VideoInfo(int id) : v_cap_source(id) {};
-    cv::Size dimensions;
-    const union Handle
-    {
-        Handle(std::string* path) : path(path) {};
-        Handle(int id) : device_id(id) {};
-        std::string* path;
-        int device_id;
-    } v_cap_source;
-    double fps;
-    int format;
-    int codec;
-};
+#include "VideoInfo.h"
+#include "FrameBuffer.h"
 
 // Basic Global Thresholding
 inline ushort find_threshold(cv::Mat& img, double stop_threshold)
@@ -88,12 +38,12 @@ int main(int argc, char* argv[])
     "{h help           |          | Print this message                           }"
     "{v view           |          | View the video as it's processed             }"
     "{i inputvideo     |          | Whether input is a prerecorded video         }"
-    "{pre              |    1     | Seconds of video to prepend                  }"
-    "{post             |    1     | Seconds of video to postpend                 }"
-    "{@input           |    0     | Device id / Path to video                    }"
+    "{pre              | 1        | Seconds of video to prepend                  }"
+    "{post             | 1        | Seconds of video to postpend                 }"
+    "{@input           | 0        | Device id / Path to video                    }"
     "{@output          | ~/Videos | Output video path                            }"
-    "{@threshold       |    7     | The pixel difference counted as motion       }"
-    "{@sensitivity     |   0.02   | The proportion of the image that's different }"
+    "{@threshold       | 7        | The pixel difference counted as motion       }"
+    "{@sensitivity     | 0.02     | The proportion of the image that's different }"
     ;
     cv::CommandLineParser parser(argc, argv, keys);
     parser.about("Version info");
