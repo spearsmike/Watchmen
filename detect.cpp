@@ -1,10 +1,61 @@
 #include <opencv2/videoio.hpp>  // cv::VideoCapture cv::VideoWriter
 #include <opencv2/imgproc.hpp>  // cv::findContours cv::mean cv::erode cv::cvtColor cv::absdiff cv::threshold cv::bitwise_and
-#ifdef TEST
 #include <opencv2/highgui.hpp>  // cv::imshow cv::createTrackbar
 #include <opencv2/viz.hpp>      // cv::viz::Color
-#endif
 #include <iostream>             // std::cout
+
+struct FrameBuffer
+{
+    FrameBuffer() : buff_size(0) {};
+    FrameBuffer(size_t buff_size) : buff_size(buff_size)
+    {
+        if(buff_size) return;
+
+        buff = new cv::Mat[buff_size];
+    }
+    ~FrameBuffer() { delete[] buff; }
+    void add_frame(cv::Mat& frame)
+    {
+        if(!buff_size) return;
+
+        newest = (newest+1)%buff_size;
+        frame.copyTo(buff[newest]);
+        
+        if(frame_cnt < buff_size)
+            frame_cnt++;
+    }
+    void write_frames(cv::VideoWriter& video)
+    {
+        if(!buff_size) return;
+
+        for(size_t i=(buff_size+newest)-(frame_cnt-1); i<buff_size+newest; i++)
+            video << buff[i%buff_size];
+        frame_cnt = 0;
+        newest = buff_size;
+    }
+    const size_t buff_size;
+    private:
+    cv::Mat* buff;
+    size_t frame_cnt = 0;
+    size_t newest = buff_size;
+};
+
+struct VideoInfo
+{
+    VideoInfo(std::string* path) : v_cap_source(path) {};
+    VideoInfo(int id) : v_cap_source(id) {};
+    cv::Size dimensions;
+    const union Handle
+    {
+        Handle(std::string* path) : path(path) {};
+        Handle(int id) : device_id(id) {};
+        std::string* path;
+        int device_id;
+    } v_cap_source;
+    double fps;
+    int format;
+    int codec;
+};
 
 // Basic Global Thresholding
 inline ushort find_threshold(cv::Mat& img, double stop_threshold)
@@ -12,7 +63,6 @@ inline ushort find_threshold(cv::Mat& img, double stop_threshold)
     ushort T = 256/2;
     double dt = std::numeric_limits<double>::max();
     std::vector<uchar> G1, G2;
-    int it=0;
     while(dt > stop_threshold)
     {
         for(int x=0; x<img.rows; x++)
@@ -28,69 +78,66 @@ inline ushort find_threshold(cv::Mat& img, double stop_threshold)
         }
         dt = abs(T-1/2.0*(cv::mean(G1)[0] + cv::mean(G2)[0]));
         T = 1/2.0*(cv::mean(G1)[0] + cv::mean(G2)[0]);
-        it++;
     }
-    //std::cout << "iterations=" << it << "\tT=" << T << '\n';
     return T;
 }
 
 int main(int argc, char* argv[])
 {
-    struct Buff
-    {
-        Buff() { buff = new cv::Mat[buff_size]; }
-        Buff(size_t buff_size) : buff_size(buff_size) { buff = new cv::Mat[buff_size]; }
-        ~Buff() { delete[] buff; }
-        void add_frame(cv::Mat& frame)
-        {
-            newest = (newest+1)%buff_size;
-            frame.copyTo(buff[newest]);
-            
-            if(frame_cnt < buff_size)
-                frame_cnt++;
-        }
-        void write_frames(cv::VideoWriter& video)
-        {
-            for(size_t i=(buff_size+newest)-(frame_cnt-1); i<buff_size+newest; i++)
-                video << buff[i%buff_size];
-            frame_cnt = 0;
-            newest = 0;
-        }
-        cv::Mat* buff;
-        size_t buff_size = 30;
-        size_t frame_cnt = 0;
-        size_t newest = buff_size;
-    };
+    const std::string keys =
+    "{h help           |          | Print this message                           }"
+    "{v view           |          | View the video as it's processed             }"
+    "{i inputvideo     |          | Whether input is a prerecorded video         }"
+    "{pre              |    1     | Seconds of video to prepend                  }"
+    "{post             |    1     | Seconds of video to postpend                 }"
+    "{@input           |    0     | Device id / Path to video                    }"
+    "{@output          | ~/Videos | Output video path                            }"
+    "{@threshold       |    7     | The pixel difference counted as motion       }"
+    "{@sensitivity     |   0.02   | The proportion of the image that's different }"
+    ;
+    cv::CommandLineParser parser(argc, argv, keys);
+    parser.about("Version info");
 
-    struct
+    if(parser.has("help"))
     {
-        cv::Size dimensions;
-        union {char* path; int device_id=0;} v_cap_source;
-        double fps;
-        int format;
-        int codec;
-    } capture_info;
-
-#ifdef TEST
-    if(argc < 2)
-    {
-        std::cout << "Provide a path to the test video\n";
+        parser.printMessage();
         return 0;
     }
+
+    const bool view = parser.has("view");
+    const bool input_vid = parser.has("inputvideo");
+
+    // a struct to amalgamate various video capture info
+    struct VideoInfo* input_vid_info;
+
+    if(input_vid)
+        input_vid_info = new struct VideoInfo(new std::string(parser.get<std::string>(0)));
     else
-    {
-        capture_info.v_cap_source.path = argv[1];
-    }
-#else
-    if(argc >= 2)
-        capture_info.v_cap_source.device_id = atoi(argv[1]);
-#endif
+        input_vid_info = new struct VideoInfo(parser.get<int>(0));
+
+    std::string output_path = parser.get<std::string>(1);
+
     // the min diff amount counted as motion, faster motion creates a larger absolute diff
     // it should be big enough to catch motion but small enough to filter out noise
-    int motion_threshold = 7;
+    int motion_threshold = parser.get<int>(2);
 
     // the minimum ratio of different pixels in a frame that count as motion
-    float motion_sensitivity = 0.02;
+    float motion_sensitivity = parser.get<float>(3);
+
+    // Seconds of video to prepend
+    const float s_pre = parser.get<float>("pre");
+
+    // Seconds of video to postpend
+    // >= pre
+    const float s_post = parser.get<float>("post");
+
+    // all command line arguments have been saved, check for errors
+    if(!parser.check())
+    {
+        parser.printErrors();
+        std::cout << "Use -h --help for program usage\n";
+        return 0;
+    }
 
     // keeps track of the number of frames without motion
     int frames_no_motion = std::numeric_limits<int>::max();
@@ -104,52 +151,51 @@ int main(int argc, char* argv[])
     // erosion kernel size
     int k_size = 2;
 
-#ifdef TEST
-    cv::VideoCapture cap(capture_info.v_cap_source.path);
-#else
-    cv::VideoCapture cap(capture_info.v_cap_source.device_id);
-#endif
-    capture_info.dimensions = cv::Size(cap.get(cv::CAP_PROP_FRAME_WIDTH), cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-    capture_info.format = cap.get(cv::CAP_PROP_FORMAT);
-    capture_info.fps = cap.get(cv::CAP_PROP_FPS);
-    capture_info.codec = cv::VideoWriter::fourcc('a', 'v', 'c', '1');
-    // the maximum number fo frames without motion before video capture is stopped
-    size_t max_no_motion = 10;
-    if(argc>=3)
-        max_no_motion = static_cast<size_t>(atof(argv[2])*capture_info.fps);
+    int sensitivity_slider = motion_threshold;
 
-    Buff prefix_buffer(max_no_motion);
+    cv::VideoCapture cap;
+    if(input_vid)
+        cap = cv::VideoCapture(*(input_vid_info->v_cap_source.path));
+    else
+        cap = cv::VideoCapture(input_vid_info->v_cap_source.device_id);
+
+    input_vid_info->dimensions = cv::Size(cap.get(cv::CAP_PROP_FRAME_WIDTH), cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    input_vid_info->format = cap.get(cv::CAP_PROP_FORMAT);
+    input_vid_info->fps = cap.get(cv::CAP_PROP_FPS);
+    input_vid_info->codec = cv::VideoWriter::fourcc('a', 'v', 'c', '1');
+    // the maximum number of frames without motion before video capture is stopped
+    const size_t max_no_motion = static_cast<size_t>(std::max<float>(s_pre, s_post)*input_vid_info->fps);
+
+    // A buffer to hold frames before current frame
+    struct FrameBuffer prefix_buffer(s_pre*input_vid_info->fps);
     cv::VideoWriter outputVid;
     cv::Mat curr_frame_color;
 
-    cv::Mat curr_frame(capture_info.dimensions, CV_MAKETYPE(capture_info.format, 1));
+    cv::Mat curr_frame(input_vid_info->dimensions, CV_MAKETYPE(input_vid_info->format, 1));
     cv::Mat prev_frame = curr_frame.clone();
     cv::Mat prev_prev_frame = prev_frame.clone();
 
-#ifdef TEST
-    int sensitivity_slider = 7;
-    cv::namedWindow("Current frame");
-    cv::createTrackbar("sensitivity", "Current frame", &sensitivity_slider, 100);
-    cv::createTrackbar("pixel difference threshold", "Current frame", &motion_threshold, 50);
-    cv::createTrackbar("erosion kernel size", "Current frame", &k_size, 10);
-#endif
+    if(view)
+    {
+        cv::namedWindow("Current frame");
+        cv::createTrackbar("sensitivity", "Current frame", &sensitivity_slider, 100);
+        cv::createTrackbar("pixel difference threshold", "Current frame", &motion_threshold, 50);
+        cv::createTrackbar("erosion kernel size", "Current frame", &k_size, 10);
+    }
 
     cv::Mat diff1, diff2, motion;
     std::vector<std::vector<cv::Point>> contours;
-    int frame_count = 0;
+    uint frame_count = 0;
     while(1)
     {
         cap >> curr_frame_color;
-        // make sure the frame isn't empty (end of video if testing)
-#ifdef TEST
+        // make sure the frame isn't empty
         if(curr_frame_color.empty())
         {
-            std::cout << "End of video\n";
+            std::cout << "Video stream ended.\n";
             break;
-            cap.open(capture_info.v_cap_source.path);
-            cap >> curr_frame_color;
         }
-#endif
+
         prefix_buffer.add_frame(curr_frame_color);
 
         // converting to BW makes countNonZero possible
@@ -163,37 +209,40 @@ int main(int argc, char* argv[])
         cv::bitwise_and(diff1, diff2, motion);
 
         cv::erode(motion, motion, cv::getStructuringElement(cv::MorphShapes::MORPH_RECT, cv::Size(k_size, k_size)));
-#ifdef TEST
-        is_motion = static_cast<float>(cv::countNonZero(motion))/capture_info.dimensions.area() > sensitivity_slider/10000.0;
-#else
-        is_motion = static_cast<float>(cv::countNonZero(motion))/capture_info.dimensions.area() > motion_sensitivity;
-#endif
+        if(view)
+            is_motion = static_cast<float>(cv::countNonZero(motion))/input_vid_info->dimensions.area() > sensitivity_slider/10000.0;
+        else
+            is_motion = static_cast<float>(cv::countNonZero(motion))/input_vid_info->dimensions.area() > motion_sensitivity;
+
         if(is_motion)
         {
             frames_no_motion = 0;
-#ifdef TEST
+            if(view)
             cv::putText(curr_frame_color, "MOTION", cv::Point(10,50), cv::FONT_HERSHEY_PLAIN, 3, cv::viz::Color::green());
             
             // create a bounding box around each contour
             cv::findContours(motion, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-            for(auto contour : contours)
-                cv::rectangle(curr_frame_color, cv::boundingRect(contour), cv::viz::Color::magenta(), 3);
-#endif
+            // todo: change from boxs around contours to one box around all contours
+            //for(auto contour : contours)
+            //    cv::rectangle(curr_frame_color, cv::boundingRect(contour), cv::viz::Color::magenta(), 3);
         }
         else
         {
             frames_no_motion++;
         }
+        std::string name;
         // if there was motion in the last <max_no_motion> frames save the current frame
         if(frames_no_motion > max_no_motion)
         {
             new_video = true;
+            outputVid.release();
+            std::cout << "Closed " + name + '\n';
         } else
         {
             if(new_video)
             {
-                std::string name = "OUT_Frame="+std::to_string(frame_count)+".mp4";
-                outputVid.open(name, capture_info.codec, capture_info.fps, capture_info.dimensions);
+                name = output_path + "OUT_Frame=" + std::to_string(frame_count) + ".mp4";
+                outputVid.open(name, input_vid_info->codec, input_vid_info->fps, input_vid_info->dimensions);
                 std::cout << "Created " << name << '\n';
                 // save previous frames
                 prefix_buffer.write_frames(outputVid);
@@ -201,11 +250,13 @@ int main(int argc, char* argv[])
             }
             outputVid << curr_frame_color;
         }
-#ifdef TEST
-        cv::imshow("Current frame", curr_frame_color);
-        cv::imshow("AND", motion);
-        cv::waitKey(1000/capture_info.fps);
-#endif
+        if(view)
+        {
+            cv::imshow("Current frame", curr_frame_color);
+            cv::imshow("AND", motion);
+            if(input_vid)
+                cv::waitKey(1000/input_vid_info->fps);
+        }
         prev_prev_frame = prev_frame.clone();
         prev_frame = curr_frame.clone();
         frame_count++;
@@ -213,9 +264,8 @@ int main(int argc, char* argv[])
 
     cap.release();
     outputVid.release();
-#ifdef TEST
-    cv::destroyAllWindows();
-#endif
+    if(view)
+        cv::destroyAllWindows();
 
     return 0;
 }
