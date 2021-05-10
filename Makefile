@@ -1,16 +1,12 @@
 CC=g++
 
-CFLAGS=-O3
+CFLAGS=-O3 -Wall
 LIBS=-lopencv_core -lopencv_imgproc -lopencv_videoio -lopencv_highgui -lopencv_viz
 ALIBS=`pkg-config --libs opencv4`
 
-MAINSRC=detect.cpp
-SOURCES=VideoInfo.cpp FrameBuffer.cpp
-HEADERS=VideoInfo.h FrameBuffer.h
+MAIN=detect.cpp
 
-SRCS=$(MAINSRC) $(HEADERS) $(SOURCES)
-OBJS=$(SOURCES:.cpp=)
-APP=$(MAINSRC:.cpp=)
+APP=$(MAIN:.cpp=)
 
 all:	$(APP)
 
@@ -21,7 +17,7 @@ clean:
 $(APP): $(APP).o VideoInfo.o FrameBuffer.o
 	$(CC) -o $@ $^ $(LIBS)
 
-$(APP).o: $(MAINSRC)
+$(APP).o: $(MAIN)
 	$(CC) $(CFLAGS) -c $^
 
 VideoInfo.o: VideoInfo.cpp VideoInfo.h
