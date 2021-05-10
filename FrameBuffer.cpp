@@ -4,12 +4,15 @@ FrameBuffer::FrameBuffer() : buff_size(0) {};
 
 FrameBuffer::FrameBuffer(size_t buff_size) : buff_size(buff_size)
 {
-    if(buff_size) return;
-
-    buff = new cv::Mat[buff_size];
+    if(buff_size)
+        buff = new cv::Mat[buff_size];
 }
 
-FrameBuffer::~FrameBuffer() { delete[] buff; }
+FrameBuffer::~FrameBuffer()
+{
+    if(buff_size)
+        delete[] buff;
+}
 
 void FrameBuffer::add_frame(cv::Mat& frame)
 {
