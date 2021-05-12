@@ -3,6 +3,7 @@
 #include <opencv2/highgui.hpp>  // cv::imshow cv::createTrackbar
 #include <opencv2/viz.hpp>      // cv::viz::Color
 #include <iostream>             // std::cout
+#include <cstdlib>              // getenv()
 
 #include "VideoInfo.h"
 #include "FrameBuffer.h"
@@ -35,15 +36,15 @@ inline ushort find_threshold(cv::Mat& img, double stop_threshold)
 int main(int argc, char* argv[])
 {
     const std::string keys =
-    "{h help           |          | Print this message                           }"
-    "{v view           |          | View the video as it's processed             }"
-    "{i inputvideo     |          | Whether input is a prerecorded video         }"
-    "{pre              | 1        | Seconds of video to prepend                  }"
-    "{post             | 1        | Seconds of video to postpend                 }"
-    "{@input           | 0        | Device id / Path to video                    }"
-    "{@output          | ~/Videos | Output video path                            }"
-    "{@threshold       | 7        | The pixel difference counted as motion       }"
-    "{@sensitivity     | 0.02     | The proportion of the image that's different }"
+    "{h help           |           | Print this message                           }"
+    "{v view           |           | View the video as it's processed             }"
+    "{i inputvideo     |           | Whether input is a prerecorded video         }"
+    "{pre              | 1         | Seconds of video to prepend                  }"
+    "{post             | 1         | Seconds of video to postpend                 }"
+    "{@input           | 0         | Device id / Path to video                    }"
+    "{@output          | ~/Videos/ | Output video path                            }"
+    "{@threshold       | 7         | The pixel difference counted as motion       }"
+    "{@sensitivity     | 0.02      | The proportion of the image that's different }"
     ;
     cv::CommandLineParser parser(argc, argv, keys);
     parser.about("Version info");
@@ -66,6 +67,14 @@ int main(int argc, char* argv[])
         input_vid_info = new struct VideoInfo(parser.get<int>(0));
 
     std::string output_path = parser.get<std::string>(1);
+    if(output_path == "~/Videos/")
+    {
+        output_path = getenv("HOME");
+        output_path += "/Videos/";
+    } else if(*(output_path.end()-1) != '/')
+    {
+        output_path += '/';
+    }
 
     // the min diff amount counted as motion, faster motion creates a larger absolute diff
     // it should be big enough to catch motion but small enough to filter out noise
@@ -90,7 +99,7 @@ int main(int argc, char* argv[])
     }
 
     // keeps track of the number of frames without motion
-    int frames_no_motion = std::numeric_limits<int>::max();
+    size_t frames_no_motion = std::numeric_limits<size_t>::max();
 
     // whether there was motion in the frame
     bool is_motion = false;
@@ -114,10 +123,11 @@ int main(int argc, char* argv[])
     input_vid_info->fps = cap.get(cv::CAP_PROP_FPS);
     input_vid_info->codec = cv::VideoWriter::fourcc('a', 'v', 'c', '1');
     // the maximum number of frames without motion before video capture is stopped
-    const size_t max_no_motion = static_cast<size_t>(std::max<float>(s_pre, s_post)*input_vid_info->fps);
+    const size_t postfix_frames = static_cast<size_t>(std::max<float>(s_pre, s_post)*input_vid_info->fps);
 
     // A buffer to hold frames before current frame
     struct FrameBuffer prefix_buffer(s_pre*input_vid_info->fps);
+    std::string outVid_name;
     cv::VideoWriter outputVid;
     cv::Mat curr_frame_color;
 
@@ -168,32 +178,39 @@ int main(int argc, char* argv[])
         {
             frames_no_motion = 0;
             if(view)
-            cv::putText(curr_frame_color, "MOTION", cv::Point(10,50), cv::FONT_HERSHEY_PLAIN, 3, cv::viz::Color::green());
+                cv::putText(curr_frame_color, "MOTION", cv::Point(10,50), cv::FONT_HERSHEY_PLAIN, 3, cv::viz::Color::green());
             
-            // create a bounding box around each contour
-            cv::findContours(motion, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-            // todo: change from boxs around contours to one box around all contours
-            //for(auto contour : contours)
-            //    cv::rectangle(curr_frame_color, cv::boundingRect(contour), cv::viz::Color::magenta(), 3);
+            if(0)
+            {
+                // create a bounding box around each contour
+                cv::findContours(motion, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+                // todo: change from boxs around contours to one box around all contours
+                //int max;
+                //for(auto contour : contours)
+                //    max = std::max(max, std::max_element(contour.begin(), contour.end()));
+                cv::rectangle(curr_frame_color, cv::boundingRect(contours), cv::viz::Color::magenta(), 3);
+            }
         }
         else
         {
             frames_no_motion++;
         }
-        std::string name;
-        // if there was motion in the last <max_no_motion> frames save the current frame
-        if(frames_no_motion > max_no_motion)
+        // if there was motion in the last <postfix_frames> frames save the current frame
+        if(frames_no_motion > postfix_frames)
         {
-            new_video = true;
-            outputVid.release();
-            std::cout << "Closed " + name + '\n';
+            if(!new_video)
+            {
+                new_video = true; // maybe use isOpened() instead
+                outputVid.release();
+                std::cout << "Closed " + outVid_name + '\n';
+            }
         } else
         {
             if(new_video)
             {
-                name = output_path + "OUT_Frame=" + std::to_string(frame_count) + ".mp4";
-                outputVid.open(name, input_vid_info->codec, input_vid_info->fps, input_vid_info->dimensions);
-                std::cout << "Created " << name << '\n';
+                outVid_name = "OUT_Frame=" + std::to_string(frame_count) + ".mp4";
+                outputVid.open(output_path+outVid_name, input_vid_info->codec, input_vid_info->fps, input_vid_info->dimensions);
+                std::cout << "Created " << outVid_name << " in " << output_path << '\n';
                 // save previous frames
                 prefix_buffer.write_frames(outputVid);
                 new_video = false;
