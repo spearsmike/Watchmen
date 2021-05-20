@@ -1,3 +1,9 @@
+/**
+ * Purpose: Implementation of FrameBuffer
+ * Author:  Michael R Spears
+ * Date:    5/20/21
+ */
+
 #include "FrameBuffer.h"
 
 FrameBuffer::FrameBuffer() : buff_size(0) {};

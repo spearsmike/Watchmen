@@ -1,3 +1,10 @@
+/**
+ * Purpose: A motion detector and video capturer
+ *          Watching for Something Pertinet WaSP
+ * Author:  Michael R Spears
+ * Date:    5/20/21
+ */
+
 #include <opencv2/videoio.hpp>  // cv::VideoCapture cv::VideoWriter
 #include <opencv2/imgproc.hpp>  // cv::findContours cv::mean cv::erode cv::cvtColor cv::absdiff cv::threshold cv::bitwise_and
 #include <opencv2/highgui.hpp>  // cv::imshow cv::createTrackbar

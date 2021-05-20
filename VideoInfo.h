@@ -1,3 +1,9 @@
+/**
+ * Purpose: Prototype for VideoInfo
+ * Author:  Michael R Spears
+ * Date:    5/20/21
+ */
+
 #ifndef _VIDEOINFO_
 #define _VIDEOINFO_
 

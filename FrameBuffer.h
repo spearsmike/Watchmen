@@ -1,3 +1,9 @@
+/**
+ * Purpose: Prototype for FrameBuffer
+ * Author:  Michael R Spears
+ * Date:    5/20/21
+ */
+
 #ifndef _FRAMEBUFFER_
 #define _FRAMEBUFFER_
 
