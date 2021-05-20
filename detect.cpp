@@ -54,7 +54,7 @@ int main(int argc, char* argv[])
     "{@sensitivity     | 0.02      | The proportion of the image that's different }"
     ;
     cv::CommandLineParser parser(argc, argv, keys);
-    parser.about("Version info");
+    parser.about("WaSP 1.0");
 
     if(parser.has("help"))
     {
