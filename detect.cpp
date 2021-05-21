@@ -46,6 +46,7 @@ int main(int argc, char* argv[])
     "{h help           |           | Print this message                           }"
     "{v view           |           | View the video as it's processed             }"
     "{i inputvideo     |           | Whether input is a prerecorded video         }"
+    "{verbose          |           | Prints what's being done to stdout           }"
     "{pre              | 1         | Seconds of video to prepend                  }"
     "{post             | 1         | Seconds of video to postpend                 }"
     "{@input           | 0         | Device id / Path to video                    }"
@@ -97,12 +98,26 @@ int main(int argc, char* argv[])
     // >= pre
     const float s_post = parser.get<float>("post");
 
+    const bool verbose = parser.get<bool>("verbose");
+
     // all command line arguments have been saved, check for errors
     if(!parser.check())
     {
         parser.printErrors();
         std::cout << "Use -h --help for program usage\n";
         return 0;
+    }
+
+    if(verbose)
+    {
+        std::cout <<
+        "view                = " << view << '\n' <<
+        "intput_vid          = " << input_vid << '\n' <<
+        "output_path         = " << output_path << '\n' <<
+        "motion_threshold    = " << motion_threshold << '\n' <<
+        "motion_sensitivity  = " << motion_sensitivity << '\n' <<
+        "seconds to prepend  = " << s_pre << '\n' <<
+        "seconds to postpend = " << s_post << '\n';
     }
 
     // keeps track of the number of frames without motion
@@ -159,7 +174,8 @@ int main(int argc, char* argv[])
         // make sure the frame isn't empty
         if(curr_frame_color.empty())
         {
-            std::cout << "Video stream ended.\n";
+            if(verbose)
+                std::cout << "Video stream ended.\n";
             break;
         }
 
@@ -209,7 +225,8 @@ int main(int argc, char* argv[])
             {
                 new_video = true; // maybe use isOpened() instead
                 outputVid.release();
-                std::cout << "Closed " + outVid_name + '\n';
+                if(verbose)
+                    std::cout << "Closed " + outVid_name + '\n';
             }
         } else
         {
@@ -217,7 +234,8 @@ int main(int argc, char* argv[])
             {
                 outVid_name = "OUT_Frame=" + std::to_string(frame_count) + ".mp4";
                 outputVid.open(output_path+outVid_name, input_vid_info->codec, input_vid_info->fps, input_vid_info->dimensions);
-                std::cout << "Created " << outVid_name << " in " << output_path << '\n';
+                if(verbose)
+                    std::cout << "Created " << outVid_name << " in " << output_path << '\n';
                 // save previous frames
                 prefix_buffer.write_frames(outputVid);
                 new_video = false;
